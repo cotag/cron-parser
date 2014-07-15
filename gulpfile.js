@@ -12,6 +12,7 @@ var rename = require('gulp-rename');
 gulp.task('build', function() {
     gulp.src('./lib/parser.js')
         .pipe(browserify({
+          insertGlobals : true,
           debug : true
         }))
         .pipe(rename({
@@ -23,6 +24,7 @@ gulp.task('build', function() {
 gulp.task('minify', function() {
     gulp.src('./lib/parser.js')
         .pipe(browserify({
+          insertGlobals : true,
           debug : false
         }))
         .pipe(uglify({
