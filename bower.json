@@ -1,6 +1,6 @@
 {
   "name": "cron-parser",
-  "main": "./browser/cron-dev.js",
+  "main": "./dist/cron-parser.js",
   "keywords": [
     "cron",
     "crontab",
