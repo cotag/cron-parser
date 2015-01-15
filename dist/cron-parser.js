@@ -42,17 +42,29 @@
    * Increment day
    */
   Date.prototype.addDay = function addDay () {
-    this.setDate(this.getDate() + 1);
+    var day = this.getDate();
+    this.setDate(day + 1);
+  
     this.setHours(0);
     this.setMinutes(0);
     this.setSeconds(0);
+  
+    if (this.getDate() === day) {
+      this.setDate(day + 2);
+    }
   };
   
   /**
    * Increment hour
    */
   Date.prototype.addHour = function addHour () {
-    this.setHours(this.getHours() + 1);
+    var hours = this.getHours();
+    this.setHours(hours + 1);
+  
+    if (this.getHours() === hours) {
+      this.setHours(hours + 2);
+    }
+  
     this.setMinutes(0);
     this.setSeconds(0);
   };
@@ -93,8 +105,8 @@
    */
   CronExpression = function (fields, options) {
     this._options = options;
-    this._currentDate = new Date(options.currentDate.toUTCString());
-    this._endDate = options.endDate ? new Date(options.endDate.toUTCString()) : null;
+    this._currentDate = new Date(options.currentDate);
+    this._endDate = options.endDate ? new Date(options.endDate) : null;
     this._fields = {};
   
     // Map fields
@@ -132,7 +144,26 @@
     [ 0, 23 ], // Hour
     [ 1, 31 ], // Day of month
     [ 1, 12 ], // Month
-    [ 0, 6 ] // Day of week
+    [ 0, 7 ] // Day of week
+  ];
+  
+  /**
+   * Days in month
+   * @type {number[]}
+   */
+  CronExpression.daysInMonth = [
+    31,
+    28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31
   ];
   
   /**
@@ -200,14 +231,14 @@
         break;
     }
   
-    //Check for valid characters.
-    if (!CronExpression._validateCharacters(value)){
+    // Check for valid characters.
+    if (!(/^[\d|/|*|\-|,]+$/.test(value))) {
       throw new Error('Invalid characters, got value: ' + value)
     }
   
     // Replace '*'
     if (value.indexOf('*') !== -1) {
-      value = value.replace(/\*/g, constraints[0] + '-' + constraints[1]);
+      value = value.replace(/\*/g, constraints.join('-'));
     }
   
     //
@@ -232,12 +263,14 @@
         var max = stack.length > 0 ? Math.max.apply(Math, stack) : -1;
   
         if (result instanceof Array) { // Make sequence linear
-          result.forEach(function (value) {
+          for (var i = 0, c = result.length; i < c; i++) {
+            var value = result[i];
+  
             // Check constraints
-            if (!CronExpression._validateConstraint(value, constraints)) {
+            if (value < constraints[0] || value > constraints[1]) {
               throw new Error(
-                'Constraint error, got value ' + value + ' expected range ' +
-                constraints[0] + '-' + constraints[1]
+                  'Constraint error, got value ' + value + ' expected range ' +
+                  constraints[0] + '-' + constraints[1]
               );
             }
   
@@ -246,16 +279,20 @@
             }
   
             max = Math.max.apply(Math, stack);
-          });
+          }
         } else { // Scalar value
-          result = parseInt(result, 10);
+          result = +result;
   
           // Check constraints
-          if (!CronExpression._validateConstraint(result, constraints)) {
+          if (result < constraints[0] || result > constraints[1]) {
             throw new Error(
               'Constraint error, got value ' + result + ' expected range ' +
               constraints[0] + '-' + constraints[1]
             );
+          }
+  
+          if (field == 'dayOfWeek') {
+            result = result % 7;
           }
   
           if (result > max) {
@@ -264,13 +301,11 @@
         }
       }
   
-      if (val.indexOf(',') !== -1) {
-        var atoms = val.split(',');
-  
-        atoms.forEach(function(value, index) {
-          handleResult(parseRepeat(value.toString()));
-        });
-  
+      var atoms = val.split(',');
+      if (atoms.length > 1) {
+        for (var i = 0, c = atoms.length; i < c; i++) {
+          handleResult(parseRepeat(atoms[i]));
+        }
       } else {
         handleResult(parseRepeat(val));
       }
@@ -286,15 +321,13 @@
      */
     function parseRepeat (val) {
       var repeatInterval = 1;
+      var atoms = val.split('/');
   
-      if (val.indexOf('/') !== -1) {
-        var atoms = val.split('/');
-        repeatInterval = atoms[atoms.length - 1];
-  
-        return parseRange(atoms[0], repeatInterval);
-      } else {
-        return parseRange(val, repeatInterval);
+      if (atoms.length > 1) {
+        return parseRange(atoms[0], atoms[atoms.length - 1]);
       }
+  
+      return parseRange(val, repeatInterval);
     }
   
     /**
@@ -307,18 +340,17 @@
      */
     function parseRange (val, repeatInterval) {
       var stack = [];
+      var atoms = val.split('-');
   
-      if (val.indexOf('-') !== -1) {
-        var atoms = val.split('-');
-  
-        // Validate format
-        if (atoms.length != 2) {
-          throw new Error('Invalid range format: ' + val);
+      if (atoms.length > 1 ) {
+        // Invalid range, return value
+        if (atoms.length < 2 || !atoms[0].length) {
+          return +val;
         }
   
         // Validate range
-        var min = parseInt(atoms[0], 10);
-        var max = parseInt(atoms[1], 10);
+        var min = +atoms[0];
+        var max = +atoms[1];
   
         if (Number.isNaN(min) || Number.isNaN(max) ||
             min < constraints[0] || max > constraints[1]) {
@@ -345,94 +377,12 @@
         }
   
         return stack;
-      } else {
-        return val;
       }
+  
+      return +val;
     }
   
     return parseSequence(value);
-  };
-  
-  /**
-   * Detect if input range fully matches constraint bounds
-   * @param {Array} range Input range
-   * @param {Array} constraints Input constraints
-   * @returns {Boolean}
-   * @private
-   */
-  CronExpression._isWildcardRange = function _isWildcardRange (range, constraints) {
-    if (!(range instanceof Array)) {
-      return false;
-    }
-  
-    if (constraints.length !== 2) {
-      return false;
-    }
-  
-    return range.length === (constraints[1] - (constraints[0] < 1 ? - 1 : 0));
-  };
-  
-  /**
-   * Match field value
-   *
-   * @param {String} value
-   * @param {Array} sequence
-   * @return {Boolean}
-   * @private
-   */
-  CronExpression._matchSchedule = function matchSchedule (value, sequence) {
-    for (var i = 0, c = sequence.length; i < c; i++) {
-      if (sequence[i] >= value) {
-        return sequence[i] === value;
-      }
-    }
-  
-    return sequence[0] === value;
-  };
-  
-  /**
-   * Validate expression allowed characters
-   *
-   * @param {String} value Input expression
-   * @returns {Boolean}
-   * @private
-   */
-  CronExpression._validateCharacters = function _validateCharacters (value) {
-    var regex = new RegExp('^[\\d|/|*|\\-|,]+$');
-    return regex.test(value);
-  };
-  
-  /**
-   * Constraint validation
-   *
-   * @private
-   * @static
-   * @param {Object} value alue to check
-   * @return {Boolean} True if validation succeeds, false if not
-   */
-  CronExpression._validateConstraint = function _validateConstraint (value, constraints) {
-    if (value < constraints[0] || value > constraints[1]) {
-      return false;
-    }
-  
-    return true;
-  };
-  
-  /**
-   * Timespan validation
-   *
-   * @private
-   * @static
-   * @param {Date} current Current date
-   * @param {Date} end End date
-   * @return {Boolean} Return true if timespan is still valid, otherwise return false
-   */
-  CronExpression._validateTimespan = function _validateTimespan (current, end) {
-    if (end && (end.getTime() - current.getTime()) < 0) {
-      return false;
-    }
-  
-    return true;
   };
   
   /**
@@ -442,33 +392,58 @@
    * @private
    */
   CronExpression.prototype._findSchedule = function _findSchedule () {
-    // Validate timespan
-    if (!CronExpression._validateTimespan(this._currentDate, this._endDate)) {
-      throw new Error('Out of the timespan range');
+    /**
+     * Match field value
+     *
+     * @param {String} value
+     * @param {Array} sequence
+     * @return {Boolean}
+     * @private
+     */
+    function matchSchedule (value, sequence) {
+      for (var i = 0, c = sequence.length; i < c; i++) {
+        if (sequence[i] >= value) {
+          return sequence[i] === value;
+        }
+      }
+  
+      return sequence[0] === value;
     }
   
-    var current = new Date(this._currentDate.toUTCString());
+    /**
+     * Detect if input range fully matches constraint bounds
+     * @param {Array} range Input range
+     * @param {Array} constraints Input constraints
+     * @returns {Boolean}
+     * @private
+     */
+    function isWildcardRange (range, constraints) {
+      if (range instanceof Array && !range.length) {
+        return false;
+      }
   
-    // Reset
-    if (this._fields.second.length === 1 && this._fields.second[0] === 0) {
-      current.addMinute();
-    } else {
-      current.addSecond();
+      if (constraints.length !== 2) {
+        return false;
+      }
+  
+      return range.length === (constraints[1] - (constraints[0] < 1 ? - 1 : 0));
     }
   
-    // Iterate and match schedule
+    var currentDate = new Date(this._currentDate);
+    var endDate = this._endDate;
+  
+    // Append minute if second is 0
+    if (this._fields.second[0] === 0) {
+      currentDate.addMinute();
+    }
+  
+    // Find matching schedule
     while (true) {
       // Validate timespan
-      if (!CronExpression._validateTimespan(current, this._endDate)) {
+      if (endDate && (endDate.getTime() - currentDate.getTime()) < 0) {
         throw new Error('Out of the timespan range');
       }
-  
-      // Match month
-      if (!CronExpression._matchSchedule(current.getMonth() + 1, this._fields.month)) {
-        current.addMonth();
-        continue;
-      }
-  
+      
       // Day of month and week matching:
       //
       // "The day of a command's execution can be specified by two fields --
@@ -480,52 +455,78 @@
       // http://unixhelp.ed.ac.uk/CGI/man-cgi?crontab+5
       //
   
-      var dayOfMonthMatch = CronExpression._matchSchedule(current.getDate(), this._fields.dayOfMonth);
-      var dayOfWeekMatch = CronExpression._matchSchedule(current.getDay(), this._fields.dayOfWeek);
-      var isDayOfMonthWildcardMatch = CronExpression._isWildcardRange(this._fields.dayOfMonth, CronExpression.constraints[3]);
-      var isDayOfWeekWildcardMatch = CronExpression._isWildcardRange(this._fields.dayOfWeek, CronExpression.constraints[5]);
+      var dayOfMonthMatch = matchSchedule(currentDate.getDate(), this._fields.dayOfMonth);
+      var dayOfWeekMatch = matchSchedule(currentDate.getDay(), this._fields.dayOfWeek);
+  
+      var isDayOfMonthWildcardMatch = isWildcardRange(this._fields.dayOfMonth, CronExpression.constraints[3]);
+      var isMonthWildcardMatch = isWildcardRange(this._fields.dayOfWeek, CronExpression.constraints[4]);
+      var isDayOfWeekWildcardMatch = isWildcardRange(this._fields.dayOfWeek, CronExpression.constraints[5]);
+  
+      // Validate days in month if explicit value is given
+      if (!isMonthWildcardMatch) {
+        var currentYear = currentDate.getYear();
+        var currentMonth = currentDate.getMonth() + 1;
+        var previousMonth = currentMonth === 1 ? 11 : currentMonth - 1;
+        var daysInPreviousMonth = CronExpression.daysInMonth[previousMonth - 1];
+        var daysOfMontRangeMax = this._fields.dayOfMonth[this._fields.dayOfMonth.length - 1];
+  
+        // Handle leap year
+        var isLeap = !((currentYear % 4) || (!(currentYear % 100) && (currentYear % 400)));
+        if (isLeap) {
+          daysInPreviousMonth = 29;
+        }
+  
+        if (this._fields.month[0] === previousMonth && daysInPreviousMonth < daysOfMontRangeMax) {
+          throw new Error('Invalid explicit day of month definition');
+        }
+      }
   
       // Add day if not day of month is set (and no match) and day of week is wildcard
       if (!isDayOfMonthWildcardMatch && isDayOfWeekWildcardMatch && !dayOfMonthMatch) {
-        current.addDay();
+        currentDate.addDay();
         continue;
       }
   
       // Add day if not day of week is set (and no match) and day of month is wildcard
       if (isDayOfMonthWildcardMatch && !isDayOfWeekWildcardMatch && !dayOfWeekMatch) {
-        current.addDay();
+        currentDate.addDay();
         continue;
       }
   
       // Add day if day of mont and week are non-wildcard values and both doesn't match
       if (!(isDayOfMonthWildcardMatch && isDayOfWeekWildcardMatch) &&
           !dayOfMonthMatch && !dayOfWeekMatch) {
-        current.addDay();
+        currentDate.addDay();
+        continue;
+      }
+  
+      // Match month
+      if (!matchSchedule(currentDate.getMonth() + 1, this._fields.month)) {
+        currentDate.addMonth();
         continue;
       }
   
       // Match hour
-      if (!CronExpression._matchSchedule(current.getHours(), this._fields.hour)) {
-        current.addHour();
+      if (!matchSchedule(currentDate.getHours(), this._fields.hour)) {
+        currentDate.addHour();
         continue;
       }
   
       // Match minute
-      if (!CronExpression._matchSchedule(current.getMinutes(), this._fields.minute)) {
-        current.addMinute();
+      if (!matchSchedule(currentDate.getMinutes(), this._fields.minute)) {
+        currentDate.addMinute();
         continue;
       }
   
       // Match second
-      if (!CronExpression._matchSchedule(current.getSeconds(), this._fields.second)) {
-        current.addSecond();
+      if (!matchSchedule(currentDate.getSeconds(), this._fields.second)) {
+        currentDate.addSecond();
         continue;
       }
-  
       break;
     }
   
-    return (this._currentDate = current);
+    return (this._currentDate = currentDate);
   };
   
   /**
@@ -591,7 +592,7 @@
    * @public
    */
   CronExpression.prototype.reset = function reset () {
-    this._currentDate = new Date(this._options.currentDate.toUTCString());
+    this._currentDate = new Date(this._options.currentDate);
   };
   
   /**
@@ -664,6 +665,7 @@
   };
   
   }());
+  
   // end:source ./expression.js
   // source ./parser.js
   var CronParser;
@@ -782,6 +784,7 @@
   
   
   }());
+  
   // end:source ./parser.js
 
   return CronParser;
