@@ -31,11 +31,11 @@
    * Increment month
    */
   Date.prototype.addMonth = function addMonth () {
-    this.setMonth(this.getMonth() + 1);
     this.setDate(1);
     this.setHours(0);
     this.setMinutes(0);
     this.setSeconds(0);
+    this.setMonth(this.getMonth() + 1);
   };
   
   /**
@@ -108,6 +108,7 @@
     this._currentDate = new Date(options.currentDate);
     this._endDate = options.endDate ? new Date(options.endDate) : null;
     this._fields = {};
+    this._isIterator = options.iterator || false;
   
     // Map fields
     for (var i = 0, c = CronExpression.map.length; i < c; i++) {
@@ -432,11 +433,6 @@
     var currentDate = new Date(this._currentDate);
     var endDate = this._endDate;
   
-    // Append minute if second is 0
-    if (this._fields.second[0] === 0) {
-      currentDate.addMinute();
-    }
-  
     // Find matching schedule
     while (true) {
       // Validate timespan
@@ -523,20 +519,38 @@
         currentDate.addSecond();
         continue;
       }
+  
       break;
     }
   
-    return (this._currentDate = currentDate);
+    // When internal date is not mutated, append one second as a padding
+    var nextDate = new Date(currentDate);
+    if (this._currentDate !== currentDate) {
+      nextDate.addSecond();
+    }
+  
+    this._currentDate = nextDate;
+    return currentDate;
   };
   
   /**
    * Find next suitable date
    *
    * @public
-   * @return {Date}
+   * @return {Date|Object}
    */
   CronExpression.prototype.next = function next () {
-    return this._findSchedule();
+    var schedule = this._findSchedule();
+  
+    // Try to return ES6 compatible iterator
+    if (this._isIterator) {
+      return {
+        value: schedule,
+        done: !this.hasNext()
+      };
+    }
+  
+    return schedule;
   };
   
   /**
@@ -601,7 +615,7 @@
    * @public
    * @param {String} expression Input expression
    * @param {Object} [options] Parsing options
-   * @param {Function} callback
+   * @param {Function} [callback]
    */
   CronExpression.parse = function parse (expression, options, callback) {
     if (typeof options === 'function') {
@@ -651,17 +665,7 @@
       return new CronExpression(fields, options);
     }
   
-    // Backward compatibility (<= 0.3.*)
-    // Will be removed in version 0.5
-    if (typeof callback === 'function') {
-      try {
-        return callback(null, parse(expression, options));
-      } catch (err) {
-        return callback(err);
-      }
-    } else {
-      return parse(expression, options);
-    }
+    return parse(expression, options);
   };
   
   }());
@@ -709,17 +713,6 @@
   CronParser.parseExpression = function parseExpression (expression, options, callback) {
     return CronExpression.parse(expression, options, callback);
   };
-  
-  
-  /**
-   * Wrapper for CronExpression.parserSync method
-   *
-   * @public
-   * @deprecated
-   * @param {String} expression Input expression
-   * @param {Object} [options] Parsing options
-   */
-  CronParser.parseExpressionSync = CronParser.parseExpression;
   
   /**
    * Parse content string
