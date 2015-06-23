@@ -90,6 +90,11 @@
   (function(){
   'use strict';
   
+  // Polyfill ES6 function for IE
+  Number.isNaN = Number.isNaN || function(value) {
+      return typeof value === "number" && value !== value;
+  };
+  
   
   /**
    * Construct a new expression parser
