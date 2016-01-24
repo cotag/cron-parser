@@ -1,15 +1,16 @@
 var util = require('util');
 var test = require('tap').test;
-var CronParser = require('../dist/cron-parser');
-var CronExpression = {
-    parse: CronParser.parseExpression
-};
+
+var CronExpression = require('../lib/expression');
+var CronDate = require('../lib/date');
+
+
 test('empty expression test', function(t) {
   try {
     var interval = CronExpression.parse('');
     t.ok(interval, 'Interval parsed');
 
-    var date = new Date();
+    var date = new CronDate();
     date.addMinute();
 
     var next = interval.next();
@@ -28,7 +29,7 @@ test('default expression test', function(t) {
     var interval = CronExpression.parse('* * * * *');
     t.ok(interval, 'Interval parsed');
 
-    var date = new Date();
+    var date = new CronDate();
     date.addMinute();
 
     var next = interval.next();
@@ -147,7 +148,7 @@ test('fixed expression test', function(t) {
     t.ok(next, 'Found next scheduled interval');
     t.equal(next.getDay(), 0, 'Day matches');
     t.equal(next.getMonth(), 7, 'Month matches');
-    t.equal(next.getDate(), 2, 'Day of month matches');
+    t.equal(next.getDate(), 12, 'Day of month matches');
     t.equal(next.getHours(), 2, 'Hour matches');
     t.equal(next.getMinutes(), 10, 'Minute matches');
   } catch (err) {
@@ -237,7 +238,7 @@ test('range test with iterator', function(t) {
       t.ok(next, 'Found next scheduled interval');
       t.equal(next.getDay(), 0, 'Day matches');
       t.equal(next.getMonth(), 7, 'Month matches');
-      t.equal(next.getDate(), 2, 'Day of month matches');
+      t.equal(next.getDate(), 12, 'Day of month matches');
       t.equal(next.getHours(), 2, 'Hour matches');
       t.equal(next.getMinutes(), 10 + i, 'Minute matches');
     }
@@ -262,7 +263,7 @@ test('incremental range test with iterator', function(t) {
       t.ok(next, 'Found next scheduled interval');
       t.equal(next.getDay(), 0, 'Day matches');
       t.equal(next.getMonth(), 7, 'Month matches');
-      t.equal(next.getDate(), 2, 'Day of month matches');
+      t.equal(next.getDate(), 12, 'Day of month matches');
       t.equal(next.getHours(), 2, 'Hour matches');
       t.equal(next.getMinutes(), 10 + (i * 2), 'Minute matches');
     }
@@ -278,7 +279,7 @@ test('predefined expression', function(t) {
     var interval = CronExpression.parse('@yearly');
     t.ok(interval, 'Interval parsed');
 
-    var date = new Date();
+    var date = new CronDate();
     date.addYear();
 
     var next = interval.next();
@@ -295,8 +296,8 @@ test('predefined expression', function(t) {
 test('expression limited with start and end date', function(t) {
   try {
     var options = {
-      currentDate: new Date('Wed, 26 Dec 2012 14:38:53'),
-      endDate: new Date('Wed, 26 Dec 2012 16:40:00')
+      currentDate: new CronDate('Wed, 26 Dec 2012 14:38:53'),
+      endDate: new CronDate('Wed, 26 Dec 2012 16:40:00')
     };
 
     var interval = CronExpression.parse('*/20 * * * *', options);
@@ -348,6 +349,31 @@ test('expression limited with start and end date', function(t) {
   t.end();
 });
 
+test('parse expression as UTC', function(t) {
+  try {
+    var options = {
+      utc: true
+    };
+
+    var interval = CronExpression.parse('0 0 10 * * *', options);
+
+    var date = interval.next();
+    t.equal(date.getUTCHours(), 10, 'Correct UTC hour value');
+
+    interval = CronExpression.parse('0 */5 * * * *', options);
+
+    var date = interval.next(), now = new Date();
+    now.setMinutes(now.getMinutes() + 5 - (now.getMinutes() % 5));
+
+    t.equal(date.getHours(), now.getHours(), 'Correct local time for 5 minute interval');
+
+  } catch (err) {
+    t.ifError(err, 'UTC parse error');
+  }
+
+  t.end();
+});
+
 test('expression using days of week strings', function(t) {
   try {
     var interval = CronExpression.parse('15 10 * * MON-TUE');
@@ -376,7 +402,7 @@ test('expression using days of week strings', function(t) {
 test('expression using mixed days of week strings', function(t) {
   try {
     var options = {
-      currentDate: new Date('Wed, 26 Dec 2012 14:38:53')
+      currentDate: new CronDate('Wed, 26 Dec 2012 14:38:53')
     };
 
     var interval = CronExpression.parse('15 10 * jAn-FeB mOn-tUE', options);
@@ -406,8 +432,8 @@ test('expression using mixed days of week strings', function(t) {
 test('expression using non-standard second field (wildcard)', function(t) {
   try {
     var options = {
-      currentDate: new Date('Wed, 26 Dec 2012 14:38:00'),
-      endDate: new Date('Wed, 26 Dec 2012 15:40:00')
+      currentDate: new CronDate('Wed, 26 Dec 2012 14:38:00'),
+      endDate: new CronDate('Wed, 26 Dec 2012 15:40:00')
     };
 
     var interval = CronExpression.parse('* * * * * *', options);
@@ -420,7 +446,7 @@ test('expression using non-standard second field (wildcard)', function(t) {
       var next = intervals[i];
 
       t.ok(next, 'Found next scheduled interval');
-      t.equal(next.getSeconds(), i, 'Second matches');
+      t.equal(next.getSeconds(), i + 1, 'Second matches');
     }
   } catch (err) {
     t.ifError(err, 'Interval parse error');
@@ -432,8 +458,8 @@ test('expression using non-standard second field (wildcard)', function(t) {
 test('expression using non-standard second field (step)', function(t) {
   try {
     var options = {
-      currentDate: new Date('Wed, 26 Dec 2012 14:38:00'),
-      endDate: new Date('Wed, 26 Dec 2012 15:40:00')
+      currentDate: new CronDate('Wed, 26 Dec 2012 14:38:00'),
+      endDate: new CronDate('Wed, 26 Dec 2012 15:40:00')
     };
 
     var interval = CronExpression.parse('*/20 * * * * *', options);
@@ -442,12 +468,9 @@ test('expression using non-standard second field (step)', function(t) {
     var intervals = interval.iterate(3);
     t.ok(intervals, 'Found intervals');
 
-    for (var i = 0, c = intervals.length; i < c; i++) {
-      var next = intervals[i];
-
-      t.ok(next, 'Found next scheduled interval');
-      t.equal(next.getSeconds(), i * 20, 'Second matches');
-    }
+    t.equal(intervals[0].getSeconds(), 20, 'Second matches');
+    t.equal(intervals[1].getSeconds(), 40, 'Second matches');
+    t.equal(intervals[2].getSeconds(), 0, 'Second matches');
   } catch (err) {
     t.ifError(err, 'Interval parse error');
   }
@@ -458,8 +481,8 @@ test('expression using non-standard second field (step)', function(t) {
 test('expression using non-standard second field (range)', function(t) {
   try {
     var options = {
-      currentDate: new Date('Wed, 26 Dec 2012 14:38:00'),
-      endDate: new Date('Wed, 26 Dec 2012 15:40:00')
+      currentDate: new CronDate('Wed, 26 Dec 2012 14:38:00'),
+      endDate: new CronDate('Wed, 26 Dec 2012 15:40:00')
     };
 
     var interval = CronExpression.parse('20-40/10 * * * * *', options);
@@ -491,19 +514,12 @@ test('day of month and week are both set', function(t) {
     t.ok(next, 'Found next scheduled interval');
     t.equal(next.getDay(), 0, 'Day matches');
     t.equal(next.getMonth(), 7, 'Month matches');
-    t.equal(next.getDate(), 2, 'Day of month matches');
+    t.equal(next.getDate(), 12, 'Day of month matches');
 
     next = interval.next();
 
     t.ok(next, 'Found next scheduled interval');
     t.equal(next.getDay(), 0, 'Day matches');
-    t.equal(next.getMonth(), 7, 'Month matches');
-    t.equal(next.getDate(), 9, 'Day of month matches');
-
-    next = interval.next();
-
-    t.ok(next, 'Found next scheduled interval');
-    t.equal(next.getDay(), 3, 'Day matches');
     t.equal(next.getMonth(), 7, 'Month matches');
     t.equal(next.getDate(), 12, 'Day of month matches');
 
@@ -512,7 +528,14 @@ test('day of month and week are both set', function(t) {
     t.ok(next, 'Found next scheduled interval');
     t.equal(next.getDay(), 0, 'Day matches');
     t.equal(next.getMonth(), 7, 'Month matches');
-    t.equal(next.getDate(), 16, 'Day of month matches');
+    t.equal(next.getDate(), 12, 'Day of month matches');
+
+    next = interval.next();
+
+    t.ok(next, 'Found next scheduled interval');
+    t.equal(next.getDay(), 0, 'Day matches');
+    t.equal(next.getMonth(), 7, 'Month matches');
+    t.equal(next.getDate(), 12, 'Day of month matches');
   } catch (err) {
     t.ifError(err, 'Interval parse error');
   }
@@ -522,7 +545,7 @@ test('day of month and week are both set', function(t) {
 
 test('Summertime bug test', function(t) {
   try {
-    var month = new Date().getMonth() + 1;
+    var month = new CronDate().getMonth() + 1;
     var interval = CronExpression.parse('0 0 0 1 '+month+' *');
     t.ok(interval, 'Interval parsed');
 
@@ -548,19 +571,12 @@ test('day of month and week are both set and dow is 7', function(t) {
     t.ok(next, 'Found next scheduled interval');
     t.equal(next.getDay(), 0, 'Day matches');
     t.equal(next.getMonth(), 7, 'Month matches');
-    t.equal(next.getDate(), 2, 'Day of month matches');
+    t.equal(next.getDate(), 12, 'Day of month matches');
 
     next = interval.next();
 
     t.ok(next, 'Found next scheduled interval');
     t.equal(next.getDay(), 0, 'Day matches');
-    t.equal(next.getMonth(), 7, 'Month matches');
-    t.equal(next.getDate(), 9, 'Day of month matches');
-
-    next = interval.next();
-
-    t.ok(next, 'Found next scheduled interval');
-    t.equal(next.getDay(), 3, 'Day matches');
     t.equal(next.getMonth(), 7, 'Month matches');
     t.equal(next.getDate(), 12, 'Day of month matches');
 
@@ -569,7 +585,14 @@ test('day of month and week are both set and dow is 7', function(t) {
     t.ok(next, 'Found next scheduled interval');
     t.equal(next.getDay(), 0, 'Day matches');
     t.equal(next.getMonth(), 7, 'Month matches');
-    t.equal(next.getDate(), 16, 'Day of month matches');
+    t.equal(next.getDate(), 12, 'Day of month matches');
+
+    next = interval.next();
+
+    t.ok(next, 'Found next scheduled interval');
+    t.equal(next.getDay(), 0, 'Day matches');
+    t.equal(next.getMonth(), 7, 'Month matches');
+    t.equal(next.getDate(), 12, 'Day of month matches');
   } catch (err) {
     t.ifError(err, 'Interval parse error');
   }
@@ -587,26 +610,26 @@ test('day of month and week are both set and dow is 6,0', function(t) {
     t.ok(next, 'Found next scheduled interval');
     t.equal(next.getDay(), 6, 'Day matches');
     t.equal(next.getMonth(), 7, 'Month matches');
-    t.equal(next.getDate(), 1, 'Day of month matches');
+    t.equal(next.getDate(), 12, 'Day of month matches');
 
     next = interval.next();
 
     t.ok(next, 'Found next scheduled interval');
     t.equal(next.getDay(), 6, 'Day matches');
     t.equal(next.getMonth(), 7, 'Month matches');
-    t.equal(next.getDate(), 8, 'Day of month matches');
+    t.equal(next.getDate(), 12, 'Day of month matches');
 
     next = interval.next();
 
     t.ok(next, 'Found next scheduled interval');
-    t.equal(next.getDay(), 3, 'Day matches');
+    t.equal(next.getDay(), 6, 'Day matches');
     t.equal(next.getMonth(), 7, 'Month matches');
     t.equal(next.getDate(), 12, 'Day of month matches');
 
     // next = interval.next();
 
     t.ok(next, 'Found next scheduled interval');
-    t.equal(next.getDay(), 3, 'Day matches');
+    t.equal(next.getDay(), 6, 'Day matches');
     t.equal(next.getMonth(), 7, 'Month matches');
     t.equal(next.getDate(), 12, 'Day of month matches');
   } catch (err) {
@@ -627,28 +650,61 @@ test('day of month and week are both set and dow is 6-7', function(t) {
     t.ok(next, 'Found next scheduled interval');
     t.equal(next.getDay(), 6, 'Day matches');
     t.equal(next.getMonth(), 7, 'Month matches');
-    t.equal(next.getDate(), 1, 'Day of month matches');
+    t.equal(next.getDate(), 12, 'Day of month matches');
 
     next = interval.next();
 
     t.ok(next, 'Found next scheduled interval');
     t.equal(next.getDay(), 6, 'Day matches');
     t.equal(next.getMonth(), 7, 'Month matches');
-    t.equal(next.getDate(), 8, 'Day of month matches');
+    t.equal(next.getDate(), 12, 'Day of month matches');
 
     next = interval.next();
 
     t.ok(next, 'Found next scheduled interval');
-    t.equal(next.getDay(), 3, 'Day matches');
+    t.equal(next.getDay(), 6, 'Day matches');
     t.equal(next.getMonth(), 7, 'Month matches');
     t.equal(next.getDate(), 12, 'Day of month matches');
 
     // next = interval.next();
 
     t.ok(next, 'Found next scheduled interval');
-    t.equal(next.getDay(), 3, 'Day matches');
+    t.equal(next.getDay(), 6, 'Day matches');
     t.equal(next.getMonth(), 7, 'Month matches');
     t.equal(next.getDate(), 12, 'Day of month matches');
+  } catch (err) {
+    t.ifError(err, 'Interval parse error');
+  }
+
+  t.end();
+});
+
+test('day and date in week should matches', function(t){
+  try {
+    var interval = CronExpression.parse('0 1 1 1 * 1');
+    t.ok(interval, 'Interval parsed');
+
+    var next = interval.next();
+
+    t.ok(next, 'Found next scheduled interval');
+    t.equal(next.getHours(), 1, 'Hours matches');
+    t.equal(next.getDay(), 1, 'Day matches');
+    t.equal(next.getDate(), 1, 'Day of month matches');
+
+    next = interval.next();
+
+    t.ok(next, 'Found next scheduled interval');
+    t.equal(next.getHours(), 1, 'Hours matches');
+    t.equal(next.getDay(), 1, 'Day matches');
+    t.equal(next.getDate(), 1, 'Day of month matches');
+
+    next = interval.next();
+
+    t.ok(next, 'Found next scheduled interval');
+    t.equal(next.getHours(), 1, 'Hours matches');
+    t.equal(next.getDay(), 1, 'Day matches');
+    t.equal(next.getDate(), 1, 'Day of month matches');
+
   } catch (err) {
     t.ifError(err, 'Interval parse error');
   }
@@ -678,8 +734,8 @@ test('day of month value can\'t be larger than days in month maximum value if it
 test('valid ES6 iterator should be returned if iterator options is set to true', function(t) {
   try {
     var options = {
-      currentDate: new Date('Wed, 26 Dec 2012 14:38:53'),
-      endDate: new Date('Wed, 26 Dec 2012 15:40:00'),
+      currentDate: new CronDate('Wed, 26 Dec 2012 14:38:53'),
+      endDate: new CronDate('Wed, 26 Dec 2012 15:40:00'),
       iterator: true
     };
 
@@ -703,6 +759,30 @@ test('valid ES6 iterator should be returned if iterator options is set to true',
     t.ok(val.done, 'Iterator is finished');
   } catch (err) {
     t.ifError(err, 'Interval parse error');
+  }
+
+  t.end();
+});
+
+test('Must not parse an expression which has repeat 0 times', function(t) {
+  try {
+    var expression = CronExpression.parse('0 */0 * * *');
+    var val = expression.next();
+  } catch (err) {
+    t.ok(err, 'Error expected');
+    t.equal(err.message, 'Constraint error, cannot repeat at every 0 time.');
+  }
+
+  t.end();
+});
+
+test('Must not parse an expression which has repeat negative number times', function(t) {
+  try {
+    var expression = CronExpression.parse('0 */-5 * * *');
+    var val = expression.next();
+  } catch (err) {
+    t.ok(err, 'Error expected');
+    t.equal(err.message, 'Constraint error, cannot repeat at every -5 time.');
   }
 
   t.end();

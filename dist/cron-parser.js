@@ -16,73 +16,81 @@
   'use strict';
   
   /**
+   * Date class extension methods
+   */
+  var extensions = {
+    addYear: function addYear() {
+      this.setFullYear(this.getFullYear() + 1);
+    },
+  
+    addMonth: function addMonth() {
+      this.setDate(1);
+      this.setHours(0);
+      this.setMinutes(0);
+      this.setSeconds(0);
+      this.setMonth(this.getMonth() + 1);
+    },
+  
+    addDay: function addDay() {
+      var day = this.getDate();
+      this.setDate(day + 1);
+  
+      this.setHours(0);
+      this.setMinutes(0);
+      this.setSeconds(0);
+  
+      if (this.getDate() === day) {
+        this.setDate(day + 2);
+      }
+    },
+  
+    addHour: function addHour() {
+      var hours = this.getHours();
+      this.setHours(hours + 1);
+  
+      if (this.getHours() === hours) {
+        this.setHours(hours + 2);
+      }
+  
+      this.setMinutes(0);
+      this.setSeconds(0);
+    },
+  
+    addMinute: function addMinute() {
+      this.setMinutes(this.getMinutes() + 1);
+      this.setSeconds(0);
+    },
+  
+    addSecond: function addSecond() {
+      this.setSeconds(this.getSeconds() + 1);
+    },
+  
+    toUTC: function toUTC() {
+      var to = new CronDate(this);
+      var ms = to.getTime() + (to.getTimezoneOffset() * 60000);
+      to.setTime(ms);
+      return to;
+    }
+  };
+  
+  /**
    * Extends Javascript Date class by adding
    * utility methods for basic date incrementation
    */
   
-  /**
-   * Increment year
-   */
-  Date.prototype.addYear = function addYear () {
-    this.setFullYear(this.getFullYear() + 1);
-  };
+  function CronDate (timestamp) {
+    var date = timestamp ? new Date(timestamp) : new Date();
   
-  /**
-   * Increment month
-   */
-  Date.prototype.addMonth = function addMonth () {
-    this.setDate(1);
-    this.setHours(0);
-    this.setMinutes(0);
-    this.setSeconds(0);
-    this.setMonth(this.getMonth() + 1);
-  };
-  
-  /**
-   * Increment day
-   */
-  Date.prototype.addDay = function addDay () {
-    var day = this.getDate();
-    this.setDate(day + 1);
-  
-    this.setHours(0);
-    this.setMinutes(0);
-    this.setSeconds(0);
-  
-    if (this.getDate() === day) {
-      this.setDate(day + 2);
-    }
-  };
-  
-  /**
-   * Increment hour
-   */
-  Date.prototype.addHour = function addHour () {
-    var hours = this.getHours();
-    this.setHours(hours + 1);
-  
-    if (this.getHours() === hours) {
-      this.setHours(hours + 2);
+    // Attach extensions
+    var methods = Object.keys(extensions);
+    for (var i = 0, c = methods.length; i < c; i++) {
+      var method = methods[i];
+      date[method] = extensions[method].bind(date);
     }
   
-    this.setMinutes(0);
-    this.setSeconds(0);
-  };
+    return date;
+  }
   
-  /**
-   * Increment minute
-   */
-  Date.prototype.addMinute = function addMinute () {
-    this.setMinutes(this.getMinutes() + 1);
-    this.setSeconds(0);
-  };
-  
-  /**
-   * Increment second
-   */
-  Date.prototype.addSecond = function addSecond () {
-    this.setSeconds(this.getSeconds() + 1);
-  };
   
   // end:source ./date.js
   // source ./expression.js
@@ -94,7 +102,6 @@
   Number.isNaN = Number.isNaN || function(value) {
       return typeof value === "number" && value !== value;
   };
-  
   
   /**
    * Construct a new expression parser
@@ -110,10 +117,12 @@
    */
   CronExpression = function (fields, options) {
     this._options = options;
-    this._currentDate = new Date(options.currentDate);
-    this._endDate = options.endDate ? new Date(options.endDate) : null;
+    this._currentDate = new CronDate(options.currentDate);
+    this._endDate = options.endDate ? new CronDate(options.endDate) : null;
     this._fields = {};
     this._isIterator = options.iterator || false;
+    this._hasIterated = false;
+    this._utc = options.utc || false;
   
     // Map fields
     for (var i = 0, c = CronExpression.map.length; i < c; i++) {
@@ -228,7 +237,7 @@
         value = value.replace(/[a-z]{1,3}/gi, function(match) {
           match = match.toLowerCase();
   
-          if (aliases[match]) {
+          if (typeof aliases[match] !== undefined) {
             return aliases[match];
           } else {
             throw new Error('Cannot resolve alias "' + match + '"')
@@ -371,7 +380,11 @@
         }
   
         // Create range
-        var repeatIndex = repeatInterval;
+        var repeatIndex = +repeatInterval;
+  
+        if (Number.isNaN(repeatIndex) || repeatIndex <= 0) {
+          throw new Error('Constraint error, cannot repeat at every ' + repeatIndex + ' time.');
+        }
   
         for (var index = min, count = max; index <= count; index++) {
           if (repeatIndex > 0 && (repeatIndex % repeatInterval) === 0) {
@@ -394,7 +407,7 @@
   /**
    * Find next matching schedule date
    *
-   * @return {Date}
+   * @return {CronDate}
    * @private
    */
   CronExpression.prototype._findSchedule = function _findSchedule () {
@@ -434,9 +447,19 @@
   
       return range.length === (constraints[1] - (constraints[0] < 1 ? - 1 : 0));
     }
+    
+    var method = function(name) {
+      return !this._utc ? name : ('getUTC' + name.slice(3));
+    }.bind(this);
   
-    var currentDate = new Date(this._currentDate);
+    var currentDate = new CronDate(this._currentDate);
     var endDate = this._endDate;
+  
+    // TODO: Improve this part
+    // Always increment second value when second part is present
+    if (this._fields.second.length > 1 && !this._hasIterated) {
+      currentDate.addSecond();
+    }
   
     // Find matching schedule
     while (true) {
@@ -444,7 +467,7 @@
       if (endDate && (endDate.getTime() - currentDate.getTime()) < 0) {
         throw new Error('Out of the timespan range');
       }
-      
+  
       // Day of month and week matching:
       //
       // "The day of a command's execution can be specified by two fields --
@@ -456,17 +479,17 @@
       // http://unixhelp.ed.ac.uk/CGI/man-cgi?crontab+5
       //
   
-      var dayOfMonthMatch = matchSchedule(currentDate.getDate(), this._fields.dayOfMonth);
-      var dayOfWeekMatch = matchSchedule(currentDate.getDay(), this._fields.dayOfWeek);
+      var dayOfMonthMatch = matchSchedule(currentDate[method('getDate')](), this._fields.dayOfMonth);
+      var dayOfWeekMatch = matchSchedule(currentDate[method('getDay')](), this._fields.dayOfWeek);
   
       var isDayOfMonthWildcardMatch = isWildcardRange(this._fields.dayOfMonth, CronExpression.constraints[3]);
-      var isMonthWildcardMatch = isWildcardRange(this._fields.dayOfWeek, CronExpression.constraints[4]);
+      var isMonthWildcardMatch = isWildcardRange(this._fields.month, CronExpression.constraints[4]);
       var isDayOfWeekWildcardMatch = isWildcardRange(this._fields.dayOfWeek, CronExpression.constraints[5]);
   
       // Validate days in month if explicit value is given
       if (!isMonthWildcardMatch) {
-        var currentYear = currentDate.getYear();
-        var currentMonth = currentDate.getMonth() + 1;
+        var currentYear = currentDate[method('getFullYear')]();
+        var currentMonth = currentDate[method('getMonth')]() + 1;
         var previousMonth = currentMonth === 1 ? 11 : currentMonth - 1;
         var daysInPreviousMonth = CronExpression.daysInMonth[previousMonth - 1];
         var daysOfMontRangeMax = this._fields.dayOfMonth[this._fields.dayOfMonth.length - 1];
@@ -484,6 +507,12 @@
         if (this._fields.month[0] === previousMonth && _daysInPreviousMonth < _daysOfMontRangeMax) {
           throw new Error('Invalid explicit day of month definition');
         }
+      }
+  
+      // Add day if select day not match with month (according to calendar)
+      if (!dayOfMonthMatch || !dayOfWeekMatch) {
+        currentDate.addDay();
+        continue;
       }
   
       // Add day if not day of month is set (and no match) and day of week is wildcard
@@ -506,25 +535,25 @@
       }
   
       // Match month
-      if (!matchSchedule(currentDate.getMonth() + 1, this._fields.month)) {
+      if (!matchSchedule(currentDate[method('getMonth')]() + 1, this._fields.month)) {
         currentDate.addMonth();
         continue;
       }
   
       // Match hour
-      if (!matchSchedule(currentDate.getHours(), this._fields.hour)) {
+      if (!matchSchedule(currentDate[method('getHours')](), this._fields.hour)) {
         currentDate.addHour();
         continue;
       }
   
       // Match minute
-      if (!matchSchedule(currentDate.getMinutes(), this._fields.minute)) {
+      if (!matchSchedule(currentDate[method('getMinutes')](), this._fields.minute)) {
         currentDate.addMinute();
         continue;
       }
   
       // Match second
-      if (!matchSchedule(currentDate.getSeconds(), this._fields.second)) {
+      if (!matchSchedule(currentDate[method('getSeconds')](), this._fields.second)) {
         currentDate.addSecond();
         continue;
       }
@@ -533,12 +562,14 @@
     }
   
     // When internal date is not mutated, append one second as a padding
-    var nextDate = new Date(currentDate);
+    var nextDate = new CronDate(currentDate);
     if (this._currentDate !== currentDate) {
       nextDate.addSecond();
     }
   
     this._currentDate = nextDate;
+    this._hasIterated = true;
+  
     return currentDate;
   };
   
@@ -546,7 +577,7 @@
    * Find next suitable date
    *
    * @public
-   * @return {Date|Object}
+   * @return {CronDate|Object}
    */
   CronExpression.prototype.next = function next () {
     var schedule = this._findSchedule();
@@ -615,7 +646,7 @@
    * @public
    */
   CronExpression.prototype.reset = function reset () {
-    this._currentDate = new Date(this._options.currentDate);
+    this._currentDate = new CronDate(this._options.currentDate);
   };
   
   /**
@@ -638,7 +669,7 @@
       }
   
       if (!options.currentDate) {
-        options.currentDate = new Date();
+        options.currentDate = new CronDate();
       }
   
       // Is input expression predefined?
